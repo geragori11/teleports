@@ -1,7 +1,7 @@
 --[[
     XClientMenuV2 - Teleports Module (Updated)
     Разработчик: geragori11
-    Функции: Быстрый телепорт по ролям + Выбор игрока + Телепорт на карту (без спавнов 1-10)
+    Функции: Быстрый телепорт по ролям + Выбор игрока + Телепорт на карту (без спавнов 1-10) + Телепорт в лобби (спавны 1-10)
 --]]
 
 return function(Window)
@@ -85,7 +85,6 @@ return function(Window)
             -- Обработка стандартных SpawnLocation (в MM2 это обычно спавны лобби)
             if obj:IsA("SpawnLocation") then
                 globalCounter = globalCounter + 1
-                -- Пропускаем спавны лобби 1-10
             elseif (obj.Name == "Spawns" or obj.Name == "SpawnPoints" or obj.Name == "PlayerSpawns") and (obj:IsA("Folder") or obj:IsA("Model")) then
                 for _, spawnPart in ipairs(obj:GetChildren()) do
                     if spawnPart:IsA("BasePart") then
@@ -146,6 +145,63 @@ return function(Window)
         return validSpawns
     end
 
+    -- Функция сбора спавнов лобби (точки 1-10, объекты в модели Lobby и стандартные SpawnLocation)
+    local function GetLobbySpawns()
+        local lobbySpawns = {}
+        local globalCounter = 0
+
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            -- Стандартные SpawnLocation (в MM2 это спавны площадки лобби)
+            if obj:IsA("SpawnLocation") then
+                globalCounter = globalCounter + 1
+                table.insert(lobbySpawns, obj)
+            elseif (obj.Name == "Spawns" or obj.Name == "SpawnPoints" or obj.Name == "PlayerSpawns") and (obj:IsA("Folder") or obj:IsA("Model")) then
+                for _, spawnPart in ipairs(obj:GetChildren()) do
+                    if spawnPart:IsA("BasePart") then
+                        globalCounter = globalCounter + 1
+
+                        -- 1. Проверка на нахождение внутри папки/модели Lobby
+                        local isInLobby = false
+                        local current = spawnPart
+                        while current and current ~= Workspace do
+                            if string.find(string.lower(current.Name), "lobby") then
+                                isInLobby = true
+                                break
+                            end
+                            current = current.Parent
+                        end
+
+                        -- 2. Проверка по названию объекта (Spawn 1-10)
+                        local nameLower = string.lower(spawnPart.Name)
+                        local numInName = tonumber(string.match(nameLower, "spawn[%s_%-]*([0-9]+)")) or tonumber(string.match(nameLower, "^([0-9]+)$"))
+                        local isLobbyByName = numInName and (numInName >= 1 and numInName <= 10)
+
+                        -- 3. Проверка по сквозному глобальному индексу (точки 1-10)
+                        local isLobbyByIndex = (globalCounter >= 1 and globalCounter <= 10)
+
+                        if isInLobby or isLobbyByName or isLobbyByIndex then
+                            table.insert(lobbySpawns, spawnPart)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Запасной поиск: явный поиск спавнов внутри контейнера Lobby
+        if #lobbySpawns == 0 then
+            local lobbyModel = Workspace:FindFirstChild("Lobby")
+            if lobbyModel then
+                for _, desc in ipairs(lobbyModel:GetDescendants()) do
+                    if desc:IsA("SpawnLocation") or (desc:IsA("BasePart") and string.find(string.lower(desc.Name), "spawn")) then
+                        table.insert(lobbySpawns, desc)
+                    end
+                end
+            end
+        end
+
+        return lobbySpawns
+    end
+
     -- Функция телепорта на случайный спавн карты
     local function TeleportToMapSpawn()
         local LocalChar = LocalPlayer.Character
@@ -175,16 +231,52 @@ return function(Window)
         end
     end
 
+    -- Функция телепорта на случайный спавн лобби
+    local function TeleportToLobby()
+        local LocalChar = LocalPlayer.Character
+        local LocalHRP = LocalChar and LocalChar:FindFirstChild("HumanoidRootPart")
+        
+        if not LocalHRP then 
+            return Window:Notify({Title = "Ошибка", Content = "Твой персонаж не найден!", Duration = 3})
+        end
+
+        local lobbySpawns = GetLobbySpawns()
+
+        if #lobbySpawns > 0 then
+            local randomSpawn = lobbySpawns[math.random(1, #lobbySpawns)]
+            LocalHRP.CFrame = randomSpawn.CFrame * CFrame.new(0, 3, 0)
+            
+            Window:Notify({
+                Title = "Телепорт в лобби",
+                Content = "Успешно телепортирован на спавн лобби!",
+                Duration = 3
+            })
+        else
+            Window:Notify({
+                Title = "Ошибка",
+                Content = "Точки спавна лобби не найдены!",
+                Duration = 3
+            })
+        end
+    end
+
     -- Создаем вкладку Teleports
     local TeleportTab = Window:CreateTab("Teleports", 4483362458)
 
-    -- СЕКЦИЯ 1: Телепорт на карту
+    -- СЕКЦИЯ 1: Телепорт на локацию
     TeleportTab:CreateSection("Телепорт на локацию")
 
     TeleportTab:CreateButton({
         Name = "🗺️ Телепорт на карту (Случайный спавн)",
         Callback = function() 
             TeleportToMapSpawn() 
+        end
+    })
+
+    TeleportTab:CreateButton({
+        Name = "🏠 Телепорт в Лобби (Спавны 1-10)",
+        Callback = function() 
+            TeleportToLobby() 
         end
     })
 
